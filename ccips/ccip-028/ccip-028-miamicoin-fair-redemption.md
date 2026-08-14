@@ -55,67 +55,32 @@ denominated in.
 
 ### The redemption ratio is stale
 
-`ccd013-burn-to-exit-mia` holds a ratio of 1710, that is 1,710 STX per 1,000,000
-MIA. That figure was correct when set. Holders have since burned MIA, which
-reduces supply without reducing the treasury, so the true ratio has risen. A
-holder redeeming at 1710 today receives less than their claim is worth, and the
-difference accrues silently to everyone else.
-
-### The ratio on ccd013 cannot be amended
-
-The ratio is set once, by `ccd013.initialize-redemption`, which derives it from
-supply and treasury balance at the moment it runs. It is not amendable
-afterwards, by design:
-
-```clarity
-;; set redemptions-enabled to true, can only run once
-(var-set redemptions-enabled true)
-```
-
-guarded on entry by
-
-```clarity
-(asserts! (not (var-get redemptions-enabled)) ERR_ALREADY_ENABLED)
-```
-
-The contract exposes no setter for `redemption-ratio`. Redemptions are enabled,
-so the latch is closed and the function cannot run a second time. **1710 is
-permanent on `ccd013`.**
-
-A second obstacle would apply even if the latch were open.
-`get-mining-treasury-total-balance` reads exactly one address:
-
-```clarity
-(stx-account 'SP8A9HZ3PKST0S42VM9523Z9NV42SZ026V4K39WH.ccd002-treasury-mia-mining-v3)
-```
-
-CCIP-027 emptied that address; the STX is now locked in
-`ccd014-pox5-staking-mia`, and the mining treasury reads 0 STX as of 2026-08-13.
-The function asserts a non-zero balance and would revert with
-`ERR_GETTING_REDEMPTION_BALANCE`. It fails safe rather than writing a zero ratio,
-but it does fail.
-
-The consequence for this proposal is that correcting the ratio is not a
-configuration change. It requires deploying a new redemption extension.
-
-### What the ratio should be
+`ccd013-burn-to-exit-mia` pays 1710, that is 1,710 STX per 1,000,000 MIA. That
+was correct when it was set. Every exit round since has burned MIA, shrinking
+supply while the treasury is untouched, so the true ratio has risen and holders
+redeeming today receive less than their claim is worth.
 
 Measured on-chain on 2026-08-13:
 
-| Input                              | Value                     |
-| ---------------------------------- | ------------------------- |
-| MIA v1 supply                      | 260,130,901 MIA           |
-| MIA v2 supply                      | 4,754,074,853.491373 MIA  |
-| Combined supply                    | 5,014,205,754 MIA         |
-| Treasury (now in ccd014)           | 10,241,497.066794 STX     |
-| Ratio by the DAO's own formula     | 2042                      |
-| Ratio currently set on ccd013      | 1710                      |
+| Input                          | Value                     |
+| ------------------------------ | ------------------------- |
+| MIA v1 supply                  | 260,130,901 MIA           |
+| MIA v2 supply                  | 4,754,074,853.491373 MIA  |
+| Combined supply                | 5,014,205,754 MIA         |
+| Treasury, now in ccd014        | 10,241,497.066794 STX     |
+| Ratio by the DAO's formula     | 2042                      |
+| Ratio currently paid           | 1710                      |
 
-That is a 19.4% increase in what a MIA holder is owed.
+19.4% more than holders are being paid. The figure moves with every burn, so what
+should be ratified is the formula, not the number above.
 
-The ratio rises with every burn, so any figure quoted here is accurate only as of
-the block it was measured at. The number to ratify is the one produced by this
-formula at execution, not the one printed above.
+The ratio cannot be corrected in place. `ccd013.initialize-redemption` sets
+`redemptions-enabled` permanently and the contract exposes no setter, so 1710 is
+final there. Its treasury reader also still points at
+`ccd002-treasury-mia-mining-v3`, which CCIP-027 emptied into
+`ccd014-pox5-staking-mia`; it reads 0 STX and would revert on
+`ERR_GETTING_REDEMPTION_BALANCE`. Refreshing par therefore requires a replacement
+redemption extension, not a configuration change.
 
 ## Specification
 
@@ -146,22 +111,18 @@ formula at execution, not the one printed above.
 
 ### 1. Correct the redemption ratio
 
-Because `ccd013` latches its ratio permanently and exposes no setter, correcting
-it requires a replacement redemption extension. That extension should:
+A replacement redemption extension, reading the treasury from
+`ccd014-pox5-staking-mia` (locked plus unlocked) so the existing formula returns a
+correct figure without a hand-entered number. `ccd013` is left untouched and
+remains readable for historical redemptions.
 
-- read the treasury from `ccd014-pox5-staking-mia`, counting both locked and
-  unlocked STX, so the existing formula produces a correct figure without a
-  hand-entered number, and
-- retain the single-initialisation latch, so the ratio remains fixed once set.
+Par must stay fixed while offers are resting, or sellers cannot price against it.
+But it should not stay fixed forever, because each round of burns raises what the
+remaining holders are owed. The natural cadence is therefore **once per round**:
+refresh par when a cycle's rewards have been fully consumed and the book is
+between runs, then hold it steady for the next round.
 
-`ccd013` itself is left untouched and remains readable for historical
-redemptions.
-
-The ratio moves with every burn, so any ratified number is stale the moment it is
-set. This proposal recommends **fixing it at the value measured on the day of
-execution**, for the same reason it is fixed today: a par that moves underneath
-resting offers is a par nobody can post against with confidence. Periodic
-re-ratification is a governance action, not an automated one.
+Whether that refresh is automatic or a governance action is left open below.
 
 ### 2. Swap extension
 
@@ -270,8 +231,9 @@ on its own merits.
 
 The following are deliberately left to the community rather than decided here.
 
-1. **Ratio.** Fix at the value measured on execution day, or recompute at
-   redemption time? This proposal recommends fixing it.
+1. **Par refresh.** Recompute between rounds, as proposed, or set once and
+   re-ratify by vote when the community chooses? If between rounds, should the
+   extension do it automatically or should each refresh be a proposal?
 2. **Spread.** Burn it as proposed, or continue capturing it to seed a MIA/sBTC
    pool?
 3. **Swap cadence.** Per reward cycle, or accumulate and swap on a size
