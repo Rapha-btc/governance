@@ -145,6 +145,15 @@ public pool is an invitation to be front-run, which is the same failure the fair
 order book was built to remove from the redemption side. Solving it in one place
 and reintroducing it in the other would be inconsistent.
 
+That threshold is not a fixed ceiling. The size at which a sandwich turns
+profitable moves with pool depth at spot, the swap's slippage tolerance, and
+prevailing fee levels. At current conditions the swap is nowhere near it: a $15k
+sBTC to STX clip against roughly $150k of STX liquidity does not clear an
+attacker's costs. The observation that the attack does not appear at these sizes
+is therefore correct today. It is a statement about present depth rather than
+about the design: if depth thins or fee levels change, the threshold moves, and
+any sizing rule that depends on staying under it has to be revisited each round.
+
 The desk maintains an on-chain allowlist with a proposal and cooldown before
 confirmation. The swap extension's contract principal is the client. Counterparty
 diligence applies to the entity behind the DAO, not to the contract.
